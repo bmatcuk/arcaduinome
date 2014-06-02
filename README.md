@@ -1,6 +1,9 @@
 # arcaduinome
 Arcaduinome is an [Arduino](http://www.arduino.cc/) based MIDI controller that uses arcade buttons for input. The name is a combination of Arcade, Arduino, and [Monome](http://monome.org/).
 
+## Software
+The ArduinoSketch directory contains the Arduino source code. It requires that you have the MIDI Library installed. The latest build (at time of writing) is included in this repo. You'll first need to install it into your Arduino app: Open the Arduino application and select Sketch -> Import Library -> Add Library, then select Arduino_MIDI_Library_v4.1.zip.
+
 ## Hardware
 Arcaduinome is based around the [Arduino Uno](http://arduino.cc/en/Main/ArduinoBoardUno), third revision. Most of the other hardware components are to support the LEDs which light the arcade buttons. Each component links to a website where you could buy the part, but you can probably find most of these parts at a variety of distributors. A lot of these parts could be swapped out for similar parts. I've made some notes below about why I've chosen a specific part and whether or not you can use some other generic part.
 
