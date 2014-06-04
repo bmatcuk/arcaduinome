@@ -34,6 +34,11 @@ Arcaduinome is based around the [Arduino Uno](http://arduino.cc/en/Main/ArduinoB
 * **2x [16-pin DIP Socket](http://www.digikey.com/product-detail/en/A16-LC-TR-R/AE9994-ND/821748)**
     Sockets for the low-side shift registers - if you decide on some other low-side solution, you might not need this.
 
+## Arduino Firmware
+The Arduino Uno R3 uses a microcontroller, specifically the Atmega16U2, as a USB-to-Serial adapter. Arcaduinome takes advantage of this fact using the [Moco](http://morecatlab.akiba.coocan.jp/lab/index.php/aruino/midi-firmware-for-arduino-uno-moco/?lang=en) (aka dualMocoLUFA) firmware. The latest version (at the time of writing) is included in this repo as dualMoco.hex. Installing this firmware on the Atmega16U2 will cause the Arduino to appear as a generic MIDI device to Windows/OSX. This way, we won't need any special drivers to interface with Arcaduinome.
+
+To install the firmware into the Atmega16U2, follow the [DFU Programming Directions](http://arduino.cc/en/Hacking/DFUProgramming8U2) on Arduino's website. Once the new firmware has been installed, it will appear as a generic MIDI device when connected to your computer. You will no longer be able to use it as an Arduino (in other words, you won't be able to reprogram it). However, if you want to reenable Arduino mode, disconnect the Arduino from your computer, connect a jumper between pin 4 and 6 on the ICSP header, and reconnect to your computer. It should now appear as a normal Arduino Uno. When you're done reprogramming, disconnect from your computer, remove the jumper, and reconnect - it will now appear as a MIDI device again!
+
 ## License
 This work is licensed under a [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](http://creativecommons.org/licenses/by-nc-sa/4.0/)
 
