@@ -43,8 +43,17 @@ void setup()
   DDRD = ROW1_ENABLE_MASK | ROW2_ENABLE_MASK | ROW3_ENABLE_MASK | ROW4_ENABLE_MASK;
   
   // Setup SPI to communicate with the shift registers for "columns"
+  // The STPIC6D595B1R shift registers recommend a clock duration of at least
+  // 40ns = 25MHz. The fastest SPI clock on the Arduino is clock/2 = 8MHz.
+  // The shift register captures data on the rising edge of the clock, hence
+  // we set the data mode to SPI_MODE0.
+  // TODO: consider replacing the SPI library with straight register commands:
+  // https://github.com/arduino/Arduino/blob/master/libraries/SPI/SPI.cpp
+  // https://github.com/arduino/Arduino/blob/master/libraries/SPI/SPI.h
   SPI.begin();
   SPI.setBitOrder(MSBFIRST);
+  SPI.setClockDivider(SPI_CLOCK_DIV2);
+  SPI.setDataMode(SPI_MODE0);
   
   // Enable MIDI
   MIDI.begin();
