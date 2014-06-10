@@ -7,6 +7,8 @@ instead, accesses the registers directly using bit-wise operators.
 
 Atmega pin to Arduino mapping: http://arduino.cc/en/Hacking/PinMapping168
 Arduino pin description: http://www.gammon.com.au/forum/?id=11473
+
+TODO: buttons - http://www.ganssle.com/debouncing-pt2.htm (listing 3)
 *******************************************************************************/
 
 #include <SPI.h>
@@ -17,16 +19,12 @@ Arduino pin description: http://www.gammon.com.au/forum/?id=11473
 
 
 // Multiplexed "rows" are controlled via the high-side P-channel FET Array.
-// Only one row may be turned on at a time. PORTD can be AND'd with
-// DISABLE_ROWS_MASK to bring all row pins to LOW, and then OR'd with the
-// appropriate row enable mask to turn on one row. DDRD can be OR'd with
-// ENABLE_ROW_OUTPUTS to set the row pins as OUTPUT pins.
-#define ROW1_ENABLE_MASK   _BV(2)   // Arduino pin 2 = Port D, pin 2
-#define ROW2_ENABLE_MASK   _BV(3)   // Arduino pin 3 = Port D, pin 3
-#define ROW3_ENABLE_MASK   _BV(4)   // Arduino pin 4 = Port D, pin 4
-#define ROW4_ENABLE_MASK   _BV(5)   // Arduino pin 5 = Port D, pin 5
-#define ENABLE_ROW_OUTPUTS (ROW1_ENABLE_MASK | ROW2_ENABLE_MASK | ROW3_ENABLE_MASK | ROW4_ENABLE_MASK)
-#define DISABLE_ROWS_MASK  ~ENABLE_ROW_OUTPUTS
+// Only one row may be turned on at a time. Row 1 and 2 are controlled by
+// Port B, pins 0 and 1. Row 3 and 4 are controlled by Port D, pins 2 and 3.
+#define ROW1_ENABLE_MASK   _BV(0)   // Arduino pin 8 = Port B, pin 0
+#define ROW2_ENABLE_MASK   _BV(1)   // Arduino pin 9 = Port B, pin 1
+#define ROW3_ENABLE_MASK   _BV(3)   // Arduino pin 3 = Port D, pin 3
+#define ROW4_ENABLE_MASK   _BV(4)   // Arduino pin 4 = Port D, pin 4
 const byte ROW_ENABLES[] = {
   ROW1_ENABLE_MASK,
   ROW2_ENABLE_MASK,
@@ -54,11 +52,23 @@ const byte ROW_ENABLES[] = {
 // ie: {{R1, G1, B1, R2, G2, B2, R3, G3, B3, R4, G4, B4}, {...}, ...}
 byte leds[4][12];
 
+// Button inputs are the four high bits of Port D.
+#define BUTTON1_MASK _BV(4)   // Arduino pin 4 = Port D, pin 4
+#define BUTTON2_MASK _BV(5)   // Arduino pin 5 = Port D, pin 5
+#define BUTTON3_MASK _BV(6)   // Arduino pin 6 = Port D, pin 6
+#define BUTTON4_MASK _BV(7)   // Arduino pin 7 = Port D, pin 7
+
+// debouncing array for buttons
+#define DEBOUNCING_CHECKS 64
+byte buttons[4][DEBOUNCING_CHECKS];
+byte button_index = 0;
+
 
 void setup()
 {
   // Set "row" pins as output
-  DDRD |= ENABLE_ROW_OUTPUTS;
+  DDRB |= ROW1_ENABLE_MASK | ROW2_ENABLE_MASK;
+  DDRD |= ROW3_ENABLE_MASK | ROW4_ENABLE_MASK;
   
   // Set SPI pins to output and bring SS (Port B, pin 2) low
   DDRB |= SPI_OUTPUT_PINS;
@@ -71,8 +81,11 @@ void setup()
   // "double speed". Ideas stolen from SPI library source:
   // https://github.com/arduino/Arduino/blob/master/libraries/SPI/SPI.cpp
   // https://github.com/arduino/Arduino/blob/master/libraries/SPI/SPI.h
-  SRCR = SPI_SETTINGS;
-  SRSR |= _BV(0);
+  SPCR = SPI_SETTINGS;
+  SPSR |= _BV(0);
+  
+  // Setup button input pins
+  DDRD &= ~(BUTTON1_MASK | BUTTON2_MASK | BUTTON3_MASK | BUTTON4_MASK);
   
   // Enable MIDI
   MIDI.begin();
@@ -93,6 +106,12 @@ void setup()
       leds[row][column*3+1] = min(256 - column * 64, 255);   // G
       leds[row][column*3+2] = 255;                           // B
     }
+  }
+  
+  // zero out buttons
+  for (byte row = 0; row < 4; row++) {
+    for (byte column = 0; column < DEBOUNCING_CHECKS; column++)
+      buttons[row][column] = 0;
   }
 }
 
@@ -131,7 +150,8 @@ void loop()
   while (!(SPSR & _BV(7)));
   
   // Disable all rows
-  PORTD &= DISABLE_ROWS_MASK;
+  PORTB &= ~(ROW1_ENABLE_MASK | ROW2_ENABLE_MASK);
+  PORTD &= ~(ROW3_ENABLE_MASK | ROW4_ENABLE_MASK);
   
   // Strobe the SS pin (Port B, pin 2) to cause the shift registers
   // to latch on the new values. The data sheet for the shift registers
@@ -141,8 +161,12 @@ void loop()
   PORTB |= _BV(2);
   PORTB &= ~_BV(2);
   
-  // Enable the row
-  PORTD |= ROW_ENABLES[row];
+  // Enable the row - the first two rows (0 and 1) are on Port B,
+  // but the second rows (2 and 3) are on Port D.
+  if (row & B00000010)
+    PORTD |= ROW_ENABLES[row];
+  else
+    PORTB |= ROW_ENABLES[row];
   
   // increment the row counter, but wrap 4 back to 0
   // also increment the iteration_count
