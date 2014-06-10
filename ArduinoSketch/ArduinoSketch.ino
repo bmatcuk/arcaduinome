@@ -3,7 +3,10 @@ Arcaduinome Arduino Sketch
 - Bob Matcuk, 2014
 
 This code eschews things like pinMode and digitalWrite for speed reasons, and,
-instead, accesses the registers directly using bit-wise operators.
+instead, accesses the registers directly using bit-wise operators. It's not
+meant to look pretty; it's meant to handle the LEDs as quickly as possible,
+since the MIDI stuff is much more important. Hopefully it's documented well
+enough that you can follow along! =)
 
 Atmega pin to Arduino mapping: http://arduino.cc/en/Hacking/PinMapping168
 Arduino pin description: http://www.gammon.com.au/forum/?id=11473
@@ -11,7 +14,6 @@ Arduino pin description: http://www.gammon.com.au/forum/?id=11473
 TODO: buttons - http://www.ganssle.com/debouncing-pt2.htm (listing 3)
 *******************************************************************************/
 
-#include <SPI.h>
 #include <MIDI.h>
 #include <midi_Defs.h>
 #include <midi_Namespace.h>
@@ -21,10 +23,10 @@ TODO: buttons - http://www.ganssle.com/debouncing-pt2.htm (listing 3)
 // Multiplexed "rows" are controlled via the high-side P-channel FET Array.
 // Only one row may be turned on at a time. Row 1 and 2 are controlled by
 // Port B, pins 0 and 1. Row 3 and 4 are controlled by Port D, pins 2 and 3.
-#define ROW1_ENABLE_MASK   _BV(0)   // Arduino pin 8 = Port B, pin 0
-#define ROW2_ENABLE_MASK   _BV(1)   // Arduino pin 9 = Port B, pin 1
-#define ROW3_ENABLE_MASK   _BV(3)   // Arduino pin 3 = Port D, pin 3
-#define ROW4_ENABLE_MASK   _BV(4)   // Arduino pin 4 = Port D, pin 4
+#define ROW1_ENABLE_MASK _BV(0)   // Arduino pin 8 = Port B, pin 0
+#define ROW2_ENABLE_MASK _BV(1)   // Arduino pin 9 = Port B, pin 1
+#define ROW3_ENABLE_MASK _BV(2)   // Arduino pin 3 = Port D, pin 2
+#define ROW4_ENABLE_MASK _BV(3)   // Arduino pin 4 = Port D, pin 3
 const byte ROW_ENABLES[] = {
   ROW1_ENABLE_MASK,
   ROW2_ENABLE_MASK,
@@ -57,11 +59,33 @@ byte leds[4][12];
 #define BUTTON2_MASK _BV(5)   // Arduino pin 5 = Port D, pin 5
 #define BUTTON3_MASK _BV(6)   // Arduino pin 6 = Port D, pin 6
 #define BUTTON4_MASK _BV(7)   // Arduino pin 7 = Port D, pin 7
+#define BUTTON_MASK  (BUTTON1_MASK | BUTTON2_MASK | BUTTON3_MASK | BUTTON4_MASK)
+const byte BUTTON_MASKS[] = {
+  BUTTON1_MASK,
+  BUTTON2_MASK,
+  BUTTON3_MASK,
+  BUTTON4_MASK
+};
 
-// debouncing array for buttons
-#define DEBOUNCING_CHECKS 64
-byte buttons[4][DEBOUNCING_CHECKS];
+// Debouncing array for buttons: the first dimension of the array represents
+// rows. The second is a circular queue representing the last X many readings
+// from Port D (where the buttons are - see above). X is DEBOUNCING_CHECKS
+// and MUST be a power of 2. If all of these readings are identical, that
+// means the user really did press (or release) the button. button_index
+// holds the current index into the circular queue. Once it hits the maximum
+// (DEBOUNCING_CHECKS), it will wrap back to zero.
+#define DEBOUNCING_CHECKS 16
+byte button_debounce[4][DEBOUNCING_CHECKS];
 byte button_index = 0;
+
+// We also keep track of the current state of the buttons... The cooresponding
+// bit will be a 1 if we have already decided the button was pressed and sent
+// the cooresponding "NoteOn" command. It'll be a zero if we think the button
+// hasn't been pressed.
+byte button_state[4];
+
+// This array holds the note that a button should make when it is pressed.
+byte buttons[4][4];
 
 
 void setup()
@@ -76,7 +100,8 @@ void setup()
   
   // Setup SPI to communicate with the shift registers for "columns"
   // The STPIC6D595B1R shift registers recommend a clock duration of at least
-  // 40ns = 25MHz. The fastest SPI clock on the Arduino is clock/2 = 8MHz.
+  // 40ns = 25MHz. The fastest SPI clock on the Arduino is clock/2 = 8MHz,
+  // which is slower than the quickest clock the shift registers can handle.
   // To achieve clock/2, we must also set the LSB of SPSR to 1 to enable
   // "double speed". Ideas stolen from SPI library source:
   // https://github.com/arduino/Arduino/blob/master/libraries/SPI/SPI.cpp
@@ -84,8 +109,9 @@ void setup()
   SPCR = SPI_SETTINGS;
   SPSR |= _BV(0);
   
-  // Setup button input pins
-  DDRD &= ~(BUTTON1_MASK | BUTTON2_MASK | BUTTON3_MASK | BUTTON4_MASK);
+  // Setup button input pins - shouldn't really need to do this, since
+  // input is default... but for completeness...
+  DDRD &= ~BUTTON_MASK;
   
   // Enable MIDI
   MIDI.begin();
@@ -108,10 +134,13 @@ void setup()
     }
   }
   
-  // zero out buttons
+  // zero out debouncing, button state, and buttons arrays
   for (byte row = 0; row < 4; row++) {
-    for (byte column = 0; column < DEBOUNCING_CHECKS; column++)
+    button_state[row] = 0;
+    for (byte column = 0; column < 4; column++)
       buttons[row][column] = 0;
+    for (byte checks = 0; checks < DEBOUNCING_CHECKS; checks++)
+      button_debounce[row][checks] = 0;
   }
 }
 
@@ -122,12 +151,20 @@ void handleSystemExclusive(byte *array, byte size)
 
 void loop()
 {
-  static byte row = 0, iteration_count = 0;
+  // The iteration count is used to vary LED intensity. If we have a red
+  // value of 128, for example, we only turn that LED "on" for the first
+  // half of the passes through the main loop. It's kind of like a poor
+  // man's PWM.
+  static byte last_row = 3, row = 0, iteration_count = 0;
   
   // read MIDI data
   MIDI.read();
   
-  // Shift first byte of column data into the shift registers
+  // Shift first byte of column data into the shift registers. Since we
+  // are shifting LSB first, this means that the first bit shifted in
+  // will represent the "left-most" red-channel of our first LED. In
+  // other words, the LEDs will need to be wired "backward", leaving the
+  // four bits "closest" to the Arduino disconnected.
   byte column_data = 0, column = 0;
   for (; column < 8; column++) {
     if (leds[row][column] > iteration_count)
@@ -137,36 +174,81 @@ void loop()
   
   // build second byte while the first one is transferring
   column_data = 0;
-  for (byte column_bit = 1; column < 12; column++, column_bit <<= 1) {
+  for (; column < 12; column++) {
     if (leds[row][column] > iteration_count)
-      column_data |= column_bit;
+      column_data |= 1 << (column - 8);
   }
   
   // Wait for first byte to finish (do we need this?) then start
-  // sending the second byte of column data. SPI Flag is bit 7 in
-  // the status register. Wait for second byte to finish as well.
+  // sending the second byte of column data. SPI Flag (bit 7 in the
+  // SPI Status Register) will go high when SPI is done transferring.
   while (!(SPSR & _BV(7)));
   SPDR = column_data;
-  while (!(SPSR & _BV(7)));
   
-  // Disable all rows
+  // While we wait for the second byte to transfer, let's check our
+  // buttons, shall we? Currently, the previous "row" will still have
+  // power, since we haven't turned it off yet (that happens below).
+  // pressed_buttons is initialized so that we'll only get a 1 for the
+  // buttons that we didn't already know were pressed. Likewise,
+  // released_buttons will have a 0 for buttons we didn't already know
+  // were released - we negate it after the loop so it'll have 1's instead.
+  byte pressed_buttons = BUTTON_MASK & ~button_state[last_row];
+  byte released_buttons = ~BUTTON_MASK | ~button_state[last_row];
+  button_debounce[last_row][button_index] = PORTD;
+  for (byte i = 0; i < DEBOUNCING_CHECKS; i++) {
+    pressed_buttons &= button_debounce[last_row][i];
+    released_buttons |= ~button_debounce[last_row][i];
+  }
+  released_buttons = ~released_buttons;
+  
+  // If pressed_buttons is non-zero, we have a newly pressed button!
+  if (pressed_buttons) {
+    for (byte column = 0; column < 4; column++) {
+      if (pressed_buttons & BUTTON_MASKS[column]) {
+        button_state[last_row] |= BUTTON_MASKS[column];
+        // TODO: send note on
+      }
+    }
+  }
+  
+  // if released_buttons is non-zero, we have a newly released button!
+  if (released_buttons) {
+    for (byte column = 0; column < 4; column++) {
+      if (released_buttons & BUTTON_MASKS[column]) {
+        button_state[last_row] &= ~BUTTON_MASKS[column];
+        // TODO: send note off
+      }
+    }
+  }
+  
+  // Make sure we're done sending the second byte via SPI and disable all rows.
+  // Probably don't need to check SPI here, since the previous part will take
+  // a pretty long time... but just to be safe...
+  while (!(SPSR & _BV(7)));
   PORTB &= ~(ROW1_ENABLE_MASK | ROW2_ENABLE_MASK);
   PORTD &= ~(ROW3_ENABLE_MASK | ROW4_ENABLE_MASK);
   
-  // Strobe the SS pin (Port B, pin 2) to cause the shift registers
+  // We've connected the SS pin (Port B, pin 2) to the latch clock on the
+  // shift registers. Here we strobe the pin to cause the shift registers
   // to latch on the new values. The data sheet for the shift registers
   // recommends that the latch clock stays high for at least 40ns.
   // The Arduino is operating at 8MHz which means the pin should stay
-  // high for around 125ns, even if we turn if back off "immediately".
+  // high for at least 125ns, even if we turn it back off "immediately".
   PORTB |= _BV(2);
   PORTB &= ~_BV(2);
   
   // Enable the row - the first two rows (0 and 1) are on Port B,
   // but the second rows (2 and 3) are on Port D.
   if (row & B00000010)
-    PORTD |= ROW_ENABLES[row];
+    PORTD |= ROW_ENABLES[row];   // we're on row 2 or 3
   else
-    PORTB |= ROW_ENABLES[row];
+    PORTB |= ROW_ENABLES[row];   // we're on row 0 or 1
+  
+  // Set the last_row to the current row, and, if the current row is zero,
+  // increment the button_index.
+  last_row = row;
+  if (!last_row)
+    button_index = (button_index + 1) & (DEBOUNCING_CHECKS - 1);
   
   // increment the row counter, but wrap 4 back to 0
   // also increment the iteration_count
