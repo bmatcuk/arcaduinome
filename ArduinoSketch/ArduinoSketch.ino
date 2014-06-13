@@ -19,19 +19,23 @@ TODO: buttons - http://www.ganssle.com/debouncing-pt2.htm (listing 3)
 #include <midi_Namespace.h>
 #include <midi_Settings.h>
 
+// if defined, disables MIDI and just prints stuff to serial
+//#define DEBUG 1
 
 // Multiplexed "rows" are controlled via the high-side P-channel FET Array.
 // Only one row may be turned on at a time. Row 1 and 2 are controlled by
 // Port B, pins 0 and 1. Row 3 and 4 are controlled by Port D, pins 2 and 3.
+// To turn "on" a row, the corresponding pin must be brought LOW. Therefore,
+// ROW_ENABLES has negated the masks already so they can be AND'd.
 #define ROW1_ENABLE_MASK _BV(0)   // Arduino pin 8 = Port B, pin 0
 #define ROW2_ENABLE_MASK _BV(1)   // Arduino pin 9 = Port B, pin 1
 #define ROW3_ENABLE_MASK _BV(2)   // Arduino pin 3 = Port D, pin 2
 #define ROW4_ENABLE_MASK _BV(3)   // Arduino pin 4 = Port D, pin 3
 const byte ROW_ENABLES[] = {
-  ROW1_ENABLE_MASK,
-  ROW2_ENABLE_MASK,
-  ROW3_ENABLE_MASK,
-  ROW4_ENABLE_MASK
+  ~ROW1_ENABLE_MASK,
+  ~ROW2_ENABLE_MASK,
+  ~ROW3_ENABLE_MASK,
+  ~ROW4_ENABLE_MASK
 };
 
 // SPI settings for the SPI Control Register:
@@ -90,8 +94,15 @@ byte buttons[4][4];
 
 void setup()
 {
-  // Set "row" pins as output
+  // Set "row" pins as output and turn them all off for now (by setting the
+  // pins high). We set the pins high first, which will engage the internal
+  // pull-up resistors since they're still in "input" mode. Externally, we
+  // have more pull up resistors, so nothing will really happen. Then when
+  // we switch to output mode, the pins will already be pulled high so more
+  // nothing will happen - exactly as we planned =)
+  PORTB |= ROW1_ENABLE_MASK | ROW2_ENABLE_MASK;
   DDRB |= ROW1_ENABLE_MASK | ROW2_ENABLE_MASK;
+  PORTD |= ROW3_ENABLE_MASK | ROW4_ENABLE_MASK;
   DDRD |= ROW3_ENABLE_MASK | ROW4_ENABLE_MASK;
   
   // Set SPI pins to output and bring SS (Port B, pin 2) low
@@ -114,9 +125,13 @@ void setup()
   DDRD &= ~BUTTON_MASK;
   
   // Enable MIDI
+#ifdef DEBUG
+  Serial.begin(115200);
+#else
   MIDI.begin();
   MIDI.turnThruOff();
   MIDI.setHandleSystemExclusive(handleSystemExclusive);
+#endif
   
   // zero out leds
   //for (byte row = 0; row < 4; row++) {
@@ -157,8 +172,11 @@ void loop()
   // man's PWM.
   static byte last_row = 3, row = 0, iteration_count = 0;
   
-  // read MIDI data
+  // read MIDI data - TODO: uncomment
+#ifdef DEBUG
+#else
   MIDI.read();
+#endif
   
   // Shift first byte of column data into the shift registers. Since we
   // are shifting LSB first, this means that the first bit shifted in
@@ -223,10 +241,11 @@ void loop()
   
   // Make sure we're done sending the second byte via SPI and disable all rows.
   // Probably don't need to check SPI here, since the previous part will take
-  // a pretty long time... but just to be safe...
+  // a pretty long time... but just to be safe... Remember, disabling a row
+  // means that we pull the pin "high"!!
   while (!(SPSR & _BV(7)));
-  PORTB &= ~(ROW1_ENABLE_MASK | ROW2_ENABLE_MASK);
-  PORTD &= ~(ROW3_ENABLE_MASK | ROW4_ENABLE_MASK);
+  PORTB |= ROW1_ENABLE_MASK | ROW2_ENABLE_MASK;
+  PORTD |= ROW3_ENABLE_MASK | ROW4_ENABLE_MASK;
   
   // We've connected the SS pin (Port B, pin 2) to the latch clock on the
   // shift registers. Here we strobe the pin to cause the shift registers
@@ -238,11 +257,12 @@ void loop()
   PORTB &= ~_BV(2);
   
   // Enable the row - the first two rows (0 and 1) are on Port B,
-  // but the second rows (2 and 3) are on Port D.
+  // but the second rows (2 and 3) are on Port D. Remember, enabling the
+  // row means we pull the pin "low"!!
   if (row & B00000010)
-    PORTD |= ROW_ENABLES[row];   // we're on row 2 or 3
+    PORTD &= ROW_ENABLES[row];   // we're on row 2 or 3
   else
-    PORTB |= ROW_ENABLES[row];   // we're on row 0 or 1
+    PORTB &= ROW_ENABLES[row];   // we're on row 0 or 1
   
   // Set the last_row to the current row, and, if the current row is zero,
   // increment the button_index.
@@ -254,4 +274,10 @@ void loop()
   // also increment the iteration_count
   row = (row + 1) & B00000011;
   iteration_count++;
+  
+  // debug stuff
+#ifdef DEBUG
+  if (iteration_count == 0)
+    Serial.print("0");
+#endif
 }
