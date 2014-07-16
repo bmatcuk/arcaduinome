@@ -37,7 +37,7 @@ $Descr A4 11693 8268
 encoding utf-8
 Sheet 1 1
 Title "Arcaduinome"
-Date "11 jul 2014"
+Date "16 jul 2014"
 Rev ""
 Comp "Bob Matcuk"
 Comment1 ""

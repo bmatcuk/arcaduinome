@@ -30,6 +30,7 @@ LIBS:atmel
 LIBS:contrib
 LIBS:valves
 LIBS:arcaduinome
+LIBS:arcaduinome-cache
 EELAYER 27 0
 EELAYER END
 $Descr A4 11693 8268
