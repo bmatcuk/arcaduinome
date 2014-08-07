@@ -1,1 +1,7 @@
 .DS_Store
+
+# Eagle project file and backup files
+eagle.epf
+*.s#?
+*.b#?
+*.l#?
