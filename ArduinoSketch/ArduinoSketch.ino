@@ -29,8 +29,8 @@ TODO: buttons - http://www.ganssle.com/debouncing-pt2.htm (listing 3)
 // ROW_ENABLES has negated the masks already so they can be AND'd.
 #define ROW1_ENABLE_MASK _BV(0)   // Arduino pin 8 = Port B, pin 0
 #define ROW2_ENABLE_MASK _BV(1)   // Arduino pin 9 = Port B, pin 1
-#define ROW3_ENABLE_MASK _BV(2)   // Arduino pin 3 = Port D, pin 2
-#define ROW4_ENABLE_MASK _BV(3)   // Arduino pin 4 = Port D, pin 3
+#define ROW3_ENABLE_MASK _BV(2)   // Arduino pin 2 = Port D, pin 2
+#define ROW4_ENABLE_MASK _BV(3)   // Arduino pin 3 = Port D, pin 3
 const byte ROW_ENABLES[] = {
   ~ROW1_ENABLE_MASK,
   ~ROW2_ENABLE_MASK,
@@ -172,29 +172,38 @@ void loop()
   // man's PWM.
   static byte last_row = 3, row = 0, iteration_count = 0;
   
-  // read MIDI data - TODO: uncomment
+  // read MIDI data
 #ifdef DEBUG
 #else
   MIDI.read();
 #endif
   
-  // Shift first byte of column data into the shift registers. Since we
-  // are shifting LSB first, this means that the first bit shifted in
-  // will represent the "left-most" red-channel of our first LED. In
-  // other words, the LEDs will need to be wired "backward", leaving the
-  // four bits "closest" to the Arduino disconnected.
-  byte column_data = 0, column = 0;
-  for (; column < 8; column++) {
+  // The shift registers are configured so that RGB LED 1 is on pins
+  // 0 = R, 1 = G, 2 = B of the first shift register. RGB LED 2 is also
+  // on the first shift register, pins 3, 4, and 5 in the same order.
+  // RGB LED 3 is on pins 0-2 of the second register, and RGB LED 4 is
+  // on pins 3-5. The first byte that we shift out will be destined for
+  // the second shift register. Since we are shifting out LSB first, we
+  // want column 11 (RGB LED #4, blue channel) to end up setting bit 2.
+  // Column 10 (RGB LED #3, green channel) should set bit 3, and so on.
+  // This means we use 13 - column to calculate the bit position.
+  byte column_data = 0, column = 11;
+  for (; column >= 6; column--) {
     if (leds[row][column] > iteration_count)
-      column_data |= 1 << column;
+      column_data |= 1 << (13 - column);
   }
   SPDR = column_data;
   
-  // build second byte while the first one is transferring
+  // Build second byte while the first one is transferring. This will
+  // be the byte destined for the first shift register. We want column
+  // 5 (RGB LED #2, blue channel) to end up setting bit 2. Column 4
+  // (RGB LED #2, green channel) should set bit 3, and so on. Because
+  // we shift out LSB first, this means we use 7 - column to calculate
+  // the bit positions.
   column_data = 0;
-  for (; column < 12; column++) {
+  for (; column >= 0; column--) {
     if (leds[row][column] > iteration_count)
-      column_data |= 1 << (column - 8);
+      column_data |= 1 << (7 - column);
   }
   
   // Wait for first byte to finish (do we need this?) then start
