@@ -13,6 +13,8 @@ The ArduinoSketch directory contains the Arduino source code. It requires that y
 ## Hardware
 Arcaduinome is based around the [Arduino Uno](http://arduino.cc/en/Main/ArduinoBoardUno), third revision. Most of the other hardware components are to support the LEDs which light the arcade buttons. Each component links to a website where you could buy the part, but you can probably find most of these parts at a variety of distributors. A lot of these parts could be swapped out for similar parts. I've made some notes below about why I've chosen a specific part and whether or not you can use some other generic part.
 
+Datasheets for some of these parts can be found in the `reference` directory of this repository.
+
 * **[Arduino Uno R3](http://www.adafruit.com/products/50)**
     I highly recommend a 3rd Revision (R3) board here. The R3 board has a larger USB-to-serial microcontroller (Atmega16U2) which will be reprogrammed later. If you have an older R1 or R2 board, you'll need to reprogram the USB-to-serial microcontroller every time you need to switch between MIDI and Arduino mode. Very annoying. With the R3, you just jumper two pins to switch back to Arduino mode.
 
@@ -32,7 +34,7 @@ Arcaduinome is based around the [Arduino Uno](http://arduino.cc/en/Main/ArduinoB
     The shift registers are used on the "low-side" of the LEDs to control individual LEDs (ie, the columns). We need 2 of these because we have "12" LEDs per row (each RGB LED is basically like 3 LEDs - we have 4 RGB LEDs per row, so, 4 x 3 = 12). The two ICs are "daisy chained" to make a 16-bit shift register; we just ignore the last 4-bits since we only need 12. Each pin of the shift register must be able to sink 20mA, and, if every LED in the row is "on", the IC as a whole must be able to sink 8 x 20mA = 160mA. This IC can easily handle that with it's open-drain outputs. Additionally, the outputs are latched, which the code takes advantage of.
 
 * **16x [NXP Semiconductors 1N4148,113 Standard Diode](http://www.digikey.com/product-detail/en/1N4148,113/568-1360-1-ND/763357)**
-    Use any standard diodes you want, though lower forward voltages are preferable. These are just used to ensure that the buttons don't interfere with each other.
+    Use any standard diodes you want, though lower forward voltages are preferable. These are just used to ensure that the buttons don't interfere with each other if you press two at the same time... particularly if they are in different rows.
 
 * **8x [120 Ohm Resistors](http://www.digikey.com/product-detail/en/CFM14JT120R/S120QCT-ND/2617666)**
     Use any standard 120 Ohm resistors you like. These limit current through the green and blue sections of the RGB LEDs. If you use different RGB LEDs, make sure to use appropriate resistors! The RGB LEDs I'm using have a 3.2V forward voltage for the green and blue sections, so these resistors should limit current to somewhere around 15mA.
@@ -52,6 +54,8 @@ Arcaduinome is based around the [Arduino Uno](http://arduino.cc/en/Main/ArduinoB
 ### Schematic
 
 [![Arcaduinome Schematic](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/schematic.png)](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/schematic.png)
+
+The schematic was generated using the free version of [Eagle v7.1](http://www.cadsoftusa.com/). The files are available in the `eagle` directory of this repository.
 
 ## Arduino Firmware
 The Arduino Uno R3 uses a microcontroller, specifically the Atmega16U2, as a USB-to-Serial adapter. Arcaduinome takes advantage of this fact using the [Moco](http://morecatlab.akiba.coocan.jp/lab/index.php/aruino/midi-firmware-for-arduino-uno-moco/?lang=en) (aka dualMocoLUFA) firmware. The latest version (at the time of writing) is included in this repo as dualMoco.hex. Installing this firmware on the Atmega16U2 will cause the Arduino to appear as a generic MIDI device to Windows/OSX. This way, we won't need any special drivers to interface with Arcaduinome.
