@@ -1,6 +1,12 @@
 # arcaduinome
 Arcaduinome is an [Arduino](http://www.arduino.cc/) based MIDI controller that uses arcade buttons for input. The name is a combination of Arcade, Arduino, and [Monome](http://monome.org/).
 
+1. [Software](#software)
+2. [Hardware](#hardware)
+3. [Arduino Firmware](#arduino-firmware)
+  a. [Schematic](#schematic)
+4. [License](#license)
+
 ## Software
 The ArduinoSketch directory contains the Arduino source code. It requires that you have the MIDI Library installed. The latest build (at time of writing) is included in this repo. You'll first need to install it into your Arduino app: Open the Arduino application and select Sketch -> Import Library -> Add Library, then select Arduino_MIDI_Library_v4.1.zip.
 
@@ -42,6 +48,10 @@ Arcaduinome is based around the [Arduino Uno](http://arduino.cc/en/Main/ArduinoB
 
 * **2x [16-pin DIP Socket](http://www.digikey.com/product-detail/en/A16-LC-TR-R/AE9994-ND/821748)**
     Sockets for the low-side shift registers - if you decide on some other low-side solution, you might not need this.
+
+### Schematic
+
+[![Arcaduinome Schematic](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/schematic.png)](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/schematic.png)
 
 ## Arduino Firmware
 The Arduino Uno R3 uses a microcontroller, specifically the Atmega16U2, as a USB-to-Serial adapter. Arcaduinome takes advantage of this fact using the [Moco](http://morecatlab.akiba.coocan.jp/lab/index.php/aruino/midi-firmware-for-arduino-uno-moco/?lang=en) (aka dualMocoLUFA) firmware. The latest version (at the time of writing) is included in this repo as dualMoco.hex. Installing this firmware on the Atmega16U2 will cause the Arduino to appear as a generic MIDI device to Windows/OSX. This way, we won't need any special drivers to interface with Arcaduinome.
