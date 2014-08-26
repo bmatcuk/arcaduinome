@@ -4,6 +4,7 @@ Arcaduinome is an [Arduino](http://www.arduino.cc/) based MIDI controller that u
 1. [Software](#software)
 2. [Hardware](#hardware)
   1. [Schematic](#schematic)
+  2. [Board PCB Layout](#board-pcb-layout)
 3. [Arduino Firmware](#arduino-firmware)
 4. [License](#license)
 
