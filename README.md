@@ -53,9 +53,25 @@ Datasheets for some of these parts can be found in the `reference` directory of 
 
 ### Schematic
 
+This is the full schematic for the Arcaduinome:
+
 [![Arcaduinome Schematic](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/schematic.png)](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/schematic.png)
 
-The schematic was generated using the free version of [Eagle v7.1](http://www.cadsoftusa.com/). The files are available in the `eagle` directory of this repository.
+However, due to limitations in the free version of Eagle and the fact that my PCB-manufacturer-of-choice is going to require that I order at least 3 boards anyway, I designed a smaller board that houses 4 buttons, with associated LEDs, resistors, and diodes, and a shift register:
+
+[![Arcaduinome Board Schematic](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/board.png)](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/board.png)
+
+The idea is that four of these boards would be used: the two boards at the "bottom" will house the shift registers. The two boards at the "top" will not have shift registers and, instead, use jumpers to connect to the boards on the "bottom". Similarly, jumpers are used to connect boards from left to right.
+
+These schematics were generated using the free version of [Eagle v7.1](http://www.cadsoftusa.com/). The files are available in the `eagle` directory of this repository.
+
+### Board PCB Layout
+
+This is the layout of the smaller board I designed:
+
+[![Arcaduinome Board Layout](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/board_pcb.png)](https://raw.githubusercontent.com/bmatcuk/arcaduinome/master/board_pcb.png)
+
+This layout was generated using the free version of [Eagle v7.1](http://www.cadsoftusa.com/). The files are available in the `eagle` directory of this repository.
 
 ## Arduino Firmware
 The Arduino Uno R3 uses a microcontroller, specifically the Atmega16U2, as a USB-to-Serial adapter. Arcaduinome takes advantage of this fact using the [Moco](http://morecatlab.akiba.coocan.jp/lab/index.php/aruino/midi-firmware-for-arduino-uno-moco/?lang=en) (aka dualMocoLUFA) firmware. The latest version (at the time of writing) is included in this repo as dualMoco.hex. Installing this firmware on the Atmega16U2 will cause the Arduino to appear as a generic MIDI device to Windows/OSX. This way, we won't need any special drivers to interface with Arcaduinome.
