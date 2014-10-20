@@ -14,6 +14,7 @@ Arduino pin description: http://www.gammon.com.au/forum/?id=11473
 TODO: buttons - http://www.ganssle.com/debouncing-pt2.htm (listing 3)
 *******************************************************************************/
 
+#include <EEPROM.h>
 #include <MIDI.h>
 #include <midi_Defs.h>
 #include <midi_Namespace.h>
@@ -21,6 +22,30 @@ TODO: buttons - http://www.ganssle.com/debouncing-pt2.htm (listing 3)
 
 // if defined, disables MIDI and just prints stuff to serial
 //#define DEBUG 1
+
+// The MIDI manufacturer ID is used to determine if a sysex message is
+// destined for us. 0x7D is specifically reserved for "educational use", so it
+// shouldn't be used by any commercial product. However, if you find that this
+// is causing some problems with some other MIDI equipment, you might need to
+// change this. The code does NOT support extended Manufacturer IDs (the MIDI
+// spec includes support for an ID of 0x00 which means that the next two bytes
+// are the actual ID), but it could be added...
+#define MIDI_MANUFACTURER_ID 0x7D
+
+// Sysex message IDs
+#define SYSEX_SET_ALL_LEDS 0x00
+#define SYSEX_SET_LED      0x01
+#define SYSEX_SAVE_LEDS    0x02
+#define SYSEX_RESET_LEDS   0x03
+
+#define SYSEX_SET_ALL_BUTTONS 0x10
+#define SYSEX_SET_BUTTON      0x11
+#define SYSEX_SAVE_BUTTONS    0x12
+#define SYSEX_RESET_BUTTONS   0x13
+
+// Offsets in EEPROM for LED and Button settings
+#define EEPROM_LED_OFFSET    0x0000
+#define EEPROM_BUTTON_OFFSET (EEPROM_LED_OFFSET + 4 * 12)
 
 // Multiplexed "rows" are controlled via the high-side P-channel FET Array.
 // Only one row may be turned on at a time. Row 1 and 2 are controlled by
@@ -133,13 +158,14 @@ void setup()
   MIDI.setHandleSystemExclusive(handleSystemExclusive);
 #endif
   
-  // zero out leds
+  // load LEDs from EEPROM
   //for (byte row = 0; row < 4; row++) {
-  //  for (byte column = 0; column < 12; column++)
-  //    leds[row][column] = 0;
+  //  for (byte column = 0; column < 12; column++) {
+  //    leds[row][column] = EEPROM.read(EEPROM_LED_OFFSET + (12 * row) + column);
+  //  }
   //}
   
-  // TODO: remove!
+  // TODO: remove and uncomment above!
   // for testing, let's give the LED some colors!
   for (byte row = 0; row < 4; row++) {
     for (byte column = 0; column < 4; column++) {
@@ -149,11 +175,11 @@ void setup()
     }
   }
   
-  // zero out debouncing, button state, and buttons arrays
+  // zero out debouncing, button state, and load buttons
   for (byte row = 0; row < 4; row++) {
     button_state[row] = 0;
     for (byte column = 0; column < 4; column++)
-      buttons[row][column] = 0;
+      buttons[row][column] = 0;   // TODO: EEPROM.read(EEPROM_BUTTON_OFFSET + (4 * row) + column);
     for (byte checks = 0; checks < DEBOUNCING_CHECKS; checks++)
       button_debounce[row][checks] = 0;
   }
@@ -161,7 +187,79 @@ void setup()
 
 void handleSystemExclusive(byte *array, byte size)
 {
-  // TODO
+  // array[0] will be 0xF0 which starts the sysex message
+  // array[1] will be the manufacturer ID - ignore the message if it
+  //   doesn't match our manufacturer ID
+  // array[2] will be the operation, assuming the message is for us
+  // array[3..size-2] will be the data encoded using the following scheme:
+  //   bytes evenly divisible by 8 (0, 8, 16, ...) will represent the MSb
+  //   of the following 7 bytes, with the LSb corresponding to the first
+  //   byte, and the MSb corresponding to the 7th byte. This is because
+  //   the MIDI standard reserves bytes that have the MSb set. This scheme
+  //   allows us to encode values greater than 127 and is, conveniently,
+  //   implemented by the Arduino MIDI library.
+  // array[size-1] is 0xF7, the MIDI code for "end of sysex"
+  // size includes the 0xF0 "start sysex" code, the manufacturer ID,
+  //   the operation code, and the terminating 0xF7 code, so the actual
+  //   data length is size - 4 starting at array + 3.
+  if (array[1] == MIDI_MANUFACTURER_ID) {
+    if (array[2] == SYSEX_SET_ALL_LEDS) {
+      // Set All LEDs
+      // leds is a 2D array, but C lays out 2D arrays like 1D arrays, so
+      // we trick it into dumping the data in with a cast.
+      midi::decodeSysEx(array + 3, (byte*)leds, size - 4);
+    } else if (array[2] == SYSEX_SET_LED) {
+      // Set an Individual LED Color
+      // array[3..6] is R,G,B for the LED, encoded as described above (hence
+      //   the extra byte)
+      // array[7] is the row
+      // array[8] is the column
+      // Technically, array[7] and array[8] are part of the encoding as
+      // described above, but since both row and column will be less than 4,
+      // we don't need to worry about decoding their MSb.
+      midi::decodeSysEx(array + 3, (byte*)leds + (12 * array[7] + 3 * array[8]), 4);
+    } else if (array[3] == SYSEX_SAVE_LEDS) {
+      // Save the LED Colors to the EEPROM
+      for (byte i = 0; i < 4; i++) {
+        for (byte j = 0; j < 12; j++) {
+          EEPROM.write(EEPROM_LED_OFFSET + (12 * i) + j, leds[i][j]);
+        }
+      }
+    } else if (array[3] == SYSEX_RESET_LEDS) {
+      // Reset the LEDs from the EEPROM
+      for (byte i = 0; i < 4; i++) {
+        for (byte j = 0; j < 12; j++) {
+          leds[i][j] = EEPROM.read(EEPROM_LED_OFFSET + (12 * i) + j);
+        }
+      }
+    } else if (array[3] == SYSEX_SET_ALL_BUTTONS) {
+      // Set All Buttons
+      // buttons in a 2D array, but C lays out 2D arrays like 1D arrays, so
+      // we trick it into dumping the data in with a cast.
+      midi::decodeSysEx(array + 3, (byte*)buttons, size - 4);
+    } else if (array[3] == SYSEX_SET_BUTTON) {
+      // Set an Individual Button
+      // array[3] will always be zero as a result of encoding
+      // array[4] will be the note to use for the button
+      // array[5] is the row
+      // array[6] is the column
+      buttons[array[5]][array[6]] = array[4];
+    } else if (array[3] == SYSEX_SAVE_BUTTONS) {
+      // Save the Buttons to the EEPROM
+      for (byte i = 0; i < 4; i++) {
+        for (byte j = 0; j < 4; j++) {
+          EEPROM.write(EEPROM_BUTTON_OFFSET + (4 * i) + j, buttons[i][j]);
+        }
+      }
+    } else if (array[3] == SYSEX_RESET_BUTTONS) {
+      // Reset the buttons from the EEPROM
+      for (byte i = 0; i < 4; i++) {
+        for (byte j = 0; j < 4; j++) {
+          buttons[i][j] = EEPROM.read(EEPROM_BUTTON_OFFSET + (4 * i) + j);
+        }
+      }
+    }
+  }
 }
 
 void loop()
@@ -233,7 +331,13 @@ void loop()
     for (byte column = 0; column < 4; column++) {
       if (pressed_buttons & BUTTON_MASKS[column]) {
         button_state[last_row] |= BUTTON_MASKS[column];
-        // TODO: send note on
+#ifdef DEBUG
+        Serial.print("ON ");
+        Serial.print(buttons[last_row][column], HEX);
+        Serial.print("\n");
+#else
+        MIDI.sendNoteOn(buttons[last_row][column], 127, 1);
+#endif
       }
     }
   }
@@ -243,7 +347,13 @@ void loop()
     for (byte column = 0; column < 4; column++) {
       if (released_buttons & BUTTON_MASKS[column]) {
         button_state[last_row] &= ~BUTTON_MASKS[column];
-        // TODO: send note off
+#ifdef DEBUG
+        Serial.print("OFF ");
+        Serial.print(buttons[last_row][column], HEX);
+        Serial.print("\n");
+#else
+        MIDI.sendNoteOff(buttons[last_row][column], 127, 1);
+#endif
       }
     }
   }
@@ -283,10 +393,4 @@ void loop()
   // also increment the iteration_count
   row = (row + 1) & B00000011;
   iteration_count++;
-  
-  // debug stuff
-#ifdef DEBUG
-  if (iteration_count == 0)
-    Serial.print("0");
-#endif
 }
